@@ -2,48 +2,73 @@ import { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { ToastContainer } from "react-toastify";
+import Cookies from "js-cookie";
+import { decryptToken, encryptToken } from "../../cryptoUtils"
+import { useNavigate } from "react-router-dom";
 
 export default function Login() {
+  const navigate = useNavigate()
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [courses, setCourses] = useState(null);
   const [loading, setLoading] = useState(false);
   const [machineIp, setMachineIp] = useState("unknown");
 
+  const fetchIp = async () => {
+    try {
+      const response = await fetch("https://api64.ipify.org?format=json");
+      const data = await response.json();
+      setMachineIp(data.ip);
+    } catch (error) {
+      console.error("Failed to fetch IP address", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchIp = async () => {
-      try {
-        const response = await fetch("https://api64.ipify.org?format=json");
-        const data = await response.json();
-        setMachineIp(data.ip);
-      } catch (error) {
-        console.error("Failed to fetch IP address", error);
-      }
-    };
-    fetchIp();
+    const encryptedUserToken = Cookies.get("userToken");
+    if (encryptedUserToken) {
+      decryptToken(encryptedUserToken).then((userToken) => {
+        if (userToken) {
+          navigate("/dashboard");
+        }
+      }).catch((error) => {
+        console.error("Failed to decrypt user token", error);
+      });
+    } else {
+      fetchIp();
+    }
   }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
+
     try {
-      // Step 1: Get Admin Token
-      const tokenResponse = await fetch(
-        "https://magento-dev.tatayab.com/rest/V1/integration/admin/token",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: "sadia.anwar@tatayab.com",
-            password: "Ttkwsadia@2025",
-          }),
-        }
-      );
-      
-      if (!tokenResponse.ok) throw new Error("Failed to get admin token");
-      const bearerToken = await tokenResponse.json();
-      
+      let bearerToken;
+      const encryptedToken = Cookies.get("bearerToken")
+      if (encryptedToken) {
+        bearerToken = await decryptToken(encryptedToken)
+      } else {
+        // const tokenResponse = await fetch(
+        //   "https://magento-dev.tatayab.com/rest/V1/integration/admin/token",
+        //   {
+        //     method: "POST",
+        //     headers: { "Content-Type": "application/json" },
+        //     body: JSON.stringify({
+        //       username: "sadia.anwar@tatayab.com",
+        //       password: "Ttkwsadia@2025",
+        //     }),
+        //   }
+        // );
+
+        // if (!tokenResponse.ok) throw new Error("Failed to get admin token");
+        // const bearerToken = await tokenResponse.json();
+        const bearerToken = "abcdefghij"
+
+        const encryptedToken = await encryptToken(bearerToken);
+        Cookies.set("bearerToken", encryptedToken, { expires: 1 / 24, secure: true, sameSite: "Strict" });
+      }
+
       // Step 2: Validate Customer Login
       const loginResponse = await fetch(
         "https://magento-dev.tatayab.com/CustomerLogin/",
@@ -60,16 +85,21 @@ export default function Login() {
           }),
         }
       );
-      
+
       const loginData = await loginResponse.json();
       if (loginData.Status !== 200) {
         toast.error("User not found");
         throw new Error("Invalid credentials");
       }
-      
+
+      const userToken = loginData["Customer-details"].user_token;
+      const encryptedUserToken = await encryptToken(userToken);
+      Cookies.set("userToken", encryptedUserToken, { expires: 1 / 24, secure: true, sameSite: "Strict" });
       setCourses(loginData["Courses-details"]);
       toast.success("Login successful!");
+      navigate("/dashboard");
     } catch (err) {
+      console.log(err)
       toast.error(err.message);
     } finally {
       setLoading(false);
