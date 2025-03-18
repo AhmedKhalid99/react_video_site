@@ -15,14 +15,38 @@ export default function Login() {
   const [machineIp, setMachineIp] = useState("unknown");
 
   const fetchIp = async () => {
+    console.log("Inside fetchIp")
+    debugger
     try {
-      const response = await fetch("https://api64.ipify.org?format=json");
-      const data = await response.json();
-      setMachineIp(data.ip);
+      const peerConnection = new RTCPeerConnection({ iceServers: [] });
+      peerConnection.createDataChannel(""); // Create a bogus data channel
+      const ipPromise = new Promise((resolve) => {
+        peerConnection.onicecandidate = (event) => {
+          console.log("ICE candidate:", event.candidate);
+          if (event.candidate) {
+            const ipMatch = event.candidate.candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+            if (ipMatch) {
+              resolve(ipMatch[0]);
+              peerConnection.close();
+            }
+          } else {
+            console.log("End of candidates.");
+          }
+        };
+      });
+
+      await peerConnection.createOffer().then((offer) => peerConnection.setLocalDescription(offer));
+      const localIp = await ipPromise;
+      // console.log(first)
+      setMachineIp(localIp);
+      console.log("localIP : ", localIp)
     } catch (error) {
-      console.error("Failed to fetch IP address", error);
+      console.error("Failed to fetch local IP address", error);
     }
   };
+  useEffect(() => {
+    fetchIp();
+  }, [])
 
   useEffect(() => {
     const encryptedUserToken = Cookies.get("userToken");
@@ -34,8 +58,6 @@ export default function Login() {
       }).catch((error) => {
         console.error("Failed to decrypt user token", error);
       });
-    } else {
-      fetchIp();
     }
   }, []);
 
@@ -70,34 +92,71 @@ export default function Login() {
       }
 
       // Step 2: Validate Customer Login
-      const loginResponse = await fetch(
-        "https://magento-dev.tatayab.com/CustomerLogin/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${bearerToken}`,
-          },
-          body: JSON.stringify({
-            email,
-            password,
-            machine_ip: machineIp, // Dynamically fetched IP
-          }),
-        }
-      );
+      // const loginResponse = await fetch(
+      //   "https://magento-dev.tatayab.com/CustomerLogin/",
+      //   {
+      //     method: "POST",
+      //     headers: {
+      //       "Content-Type": "application/json",
+      //       Authorization: `Bearer ${bearerToken}`,
+      //     },
+      //     body: JSON.stringify({
+      //       email,
+      //       password,
+      //       machine_ip: machineIp, // Dynamically fetched IP
+      //     }),
+      //   }
+      // );
 
-      const loginData = await loginResponse.json();
-      if (loginData.Status !== 200) {
-        toast.error("User not found");
-        throw new Error("Invalid credentials");
+      // const loginData = await loginResponse.json();
+      // if (loginData.Status !== 200) {
+      //   toast.error("User not found");
+      //   throw new Error("Invalid credentials");
+      // }
+
+      // const userToken = loginData["Customer-details"].user_token;
+      // const encryptedUserToken = await encryptToken(userToken);
+      // Cookies.set("userToken", encryptedUserToken, { expires: 1 / 24, secure: true, sameSite: "Strict" });
+      // setCourses(loginData["Courses-details"]);
+      // toast.success("Login successful!");
+      // navigate("/dashboard");
+      const loginData = {
+        "status": 200,
+        "customer-details": {
+          "user_token": "",
+          "customer_id": "8",
+          "customer_name": "jhd"
+        },
+        "courses-details": [
+          {
+            "course_name": "Main Core Programming",
+            "course_part": [
+                "PF Course",
+                { "OOP": ["Inheritance", "Polymorphism"] },
+                "Data Structures"
+            ]
+        },
+        {
+            "course_name": "Web Development",
+            "course_part": [
+                "HTML & CSS",
+                { "JavaScript": ["ES6", "DOM Manipulation"] },
+                "React Basics"
+            ]
+        },
+        {
+            "course_name": "Backend Development",
+            "course_part": [
+                "Node.js",
+                { "Express": ["Middleware", "Routing"] },
+                "MongoDB"
+            ]
+        }
+
+        ]
       }
 
-      const userToken = loginData["Customer-details"].user_token;
-      const encryptedUserToken = await encryptToken(userToken);
-      Cookies.set("userToken", encryptedUserToken, { expires: 1 / 24, secure: true, sameSite: "Strict" });
-      setCourses(loginData["Courses-details"]);
-      toast.success("Login successful!");
-      navigate("/dashboard");
+      navigate("/dashboard", { state: { user: loginData["customer-details"], courses: loginData["courses-details"] } });
     } catch (err) {
       console.log(err)
       toast.error(err.message);
